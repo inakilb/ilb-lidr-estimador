@@ -31,6 +31,7 @@ app/
 └── context/
     ├── __init__.py
     └── examples.py      # Ejemplos de estimaciones previas (few-shot)
+transcripciones/         # Peticiones de ejemplo ({"transcription": ...}) para probar el endpoint
 openspec/                # Especificaciones y cambios (desarrollo con OpenSpec)
 .env.example             # Variables de entorno necesarias (sin valores)
 pyproject.toml / uv.lock # Dependencias (requirements.txt se genera desde el lock)
@@ -188,6 +189,64 @@ La `transcription` es obligatoria, no puede estar vacía y admite como máximo 5
 | 502    | El proveedor falla y reintentar no sirve (API key inválida, sin crédito, modelo inexistente), o la estimación sale incompleta | Revisar la cuenta o la configuración   |
 | 503    | El proveedor no está disponible en este momento (límite de peticiones, sobrecarga, timeout)                                   | Reintentar tras `Retry-After` segundos |
 
+## Verificación
+
+Verificación del checklist del curso con el servicio arrancado (`uv run uvicorn app.main:app --reload`), realizada el 22/11/2026 con Anthropic `claude-haiku-4-5`. Los otros proveedores y modelos se verificaron en vivo durante el paso 4.
+
+| Punto del checklist                                               | Cómo se ha comprobado                                                                                                         | Resultado                                                      | Cómo repetirlo                                                                               |
+| ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| El proyecto arranca sin errores                                   | Arranque con `--reload` y revisión del log                                                                                    | ✅ Sin errores, con la configuración en el log                 | `uv run uvicorn app.main:app --reload`                                                       |
+| Las API keys se cargan desde `.env` y nunca aparecen en el código | Búsqueda de patrones de clave en los ficheros versionados; solo `app/config.py` lee las variables; `.env.example` sin valores | ✅ Ninguna clave en el repositorio                             | `git ls-files \| xargs grep -lE 'sk-(ant\|proj)-[A-Za-z0-9_-]{10,}'` (no debe devolver nada) |
+| `GET /health` responde 200                                        | `curl`                                                                                                                        | ✅ 200, `"status": "ok"`                                       | `curl -i localhost:8000/health`                                                              |
+| `POST /api/v1/estimate` devuelve una estimación                   | El `curl` del curso, sin cambios                                                                                              | ✅ 200 en ~9 s, estimación en español                          | ver [Uso](#uso) o `curso-landing.json` abajo                                                 |
+| La estimación se inspira en los ejemplos inyectados               | Comparación con el ejemplo 6 y prueba sin ejemplos (ver abajo)                                                                | ✅ Influencia clara                                            | ver [Influencia de los ejemplos](#influencia-de-los-ejemplos)                                |
+| Swagger accesible en `/docs`                                      | `curl` a `/docs` y `/openapi.json`                                                                                            | ✅ 200, Swagger UI con `POST /api/v1/estimate` y `GET /health` | <http://localhost:8000/docs>                                                                 |
+| `.env` está en `.gitignore`                                       | `git check-ignore`                                                                                                            | ✅ Ignorado (`.gitignore:13`)                                  | `git check-ignore -v .env`                                                                   |
+
+### Pruebas manuales
+
+La carpeta `transcripciones/` contiene peticiones listas para enviar, en formato `{"transcription": "..."}`. Con el servidor arrancado, ejecútalas desde otra terminal en la raíz del repositorio:
+
+```bash
+curl -X POST localhost:8000/api/v1/estimate -H "Content-Type: application/json" -d @transcripciones/curso-landing.json
+```
+
+| Fichero               | Qué prueba                                                                                                | Resultado esperado                               |
+| --------------------- | --------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `curso-landing.json`  | La transcripción de ejemplo del curso (landing page + HubSpot)                                            | 200, estimación en español                       |
+| `tienda-vinos.json`   | Una tienda WooCommerce con Correos y Redsys, parecida al ejemplo 6                                        | 200, estimación con tareas de Correos y Redsys   |
+| `no-es-proyecto.json` | Un texto que no es un proyecto de software                                                                | 200, una frase indicando que no se puede estimar |
+| `vacia.json`          | Una transcripción solo con espacios                                                                       | 422, sin llamar al LLM                           |
+| `inyeccion.json`      | Un proyecto con una instrucción que intenta cambiar el comportamiento ("ignora todas las instrucciones…") | 200, estimación normal que ignora la instrucción |
+
+Para lanzarlas todas y ver el código HTTP y el inicio de cada respuesta:
+
+```bash
+for f in transcripciones/*.json; do
+  echo "== $f"
+  curl -s -w "\nHTTP %{http_code}\n" -X POST localhost:8000/api/v1/estimate \
+    -H "Content-Type: application/json" -d @"$f" | head -c 300; echo
+done
+```
+
+En Swagger (<http://localhost:8000/docs>), abre `POST /api/v1/estimate`, pulsa _Try it out_ y pega el contenido de cualquiera de estos ficheros.
+
+### Influencia de los ejemplos
+
+Se ha estimado `tienda-vinos.json` dos veces: con los 7 ejemplos en el prompt, como funciona el servicio, y sin ejemplos, con el mismo prompt al que se le quitan solo los ejemplos.
+
+|                                 | Ejemplo 6 (en el prompt)  | Con ejemplos                       | Sin ejemplos                                                        |
+| ------------------------------- | ------------------------- | ---------------------------------- | ------------------------------------------------------------------- |
+| Tareas                          | 18                        | 18: las mismas y en el mismo orden | 12, más gruesas y con otros nombres                                 |
+| Horas (subtotal + contingencia) | 206 + 30 = 236 h          | 206 + 30 = 236 h                   | 176 + 26 = 202 h                                                    |
+| Coste total (sin IVA)           | 14.750 €                  | 14.750 €                           | 12.625 €                                                            |
+| Equipo y duración               | 1,5 FTE, 6 semanas        | 1,5 FTE, 6 semanas                 | 2,0 FTE, 4 semanas                                                  |
+| Formato de totales y secciones  | Plantilla de los ejemplos | Igual que el ejemplo               | Distinto (subtotal dentro de la tabla, sin horas totales ni tarifa) |
+
+- **Con ejemplos**, la estimación es prácticamente el ejemplo 6 traducido: 15 de las 18 tareas tienen las mismas horas. Esto demuestra que los ejemplos guían la estimación, pero también muestra un exceso de anclaje: no se ajusta a las diferencias del encargo (120 productos en lugar de 150, sin envíos a Portugal). Es algo a mejorar en la sesión en vivo.
+- **Sin ejemplos** se siguen cumpliendo las reglas que están en las instrucciones del prompt: la tarifa de 62,5 €/h, la contingencia del 15 %, el IVA excluido, la fórmula de duración y los encabezados en español. En cambio, cambian la granularidad, las tareas, las horas, el equipo y el formato, y faltan partes como el descubrimiento, las páginas legales y el SEO. Es decir, las reglas vienen de las instrucciones, y la plantilla y las cifras de referencia vienen de los ejemplos.
+- Detalles observados en esta verificación: una respuesta usó el formato inglés para los miles (`9,375 EUR`) y otra dejó sin traducir "Tarifa blended". Los resultados varían entre ejecuciones.
+
 ## Desarrollo
 
 El código se desarrolla con [OpenSpec](https://github.com/Fission-AI/OpenSpec): cada paso del ejercicio es un cambio (`/opsx:propose` → `/opsx:apply` → `/opsx:archive`) y se entrega en un commit propio.
@@ -202,5 +261,5 @@ El código se desarrolla con [OpenSpec](https://github.com/Fission-AI/OpenSpec):
 | 4    | Servicio de llamada al LLM                                   | Hecho     |
 | 5    | Endpoint `POST /api/v1/estimate`                             | Hecho     |
 | 6    | Aplicación FastAPI (`GET /health`, Swagger)                  | Hecho     |
-| 7    | Verificación                                                 | Pendiente |
+| 7    | Verificación                                                 | Hecho     |
 | 8    | Pipeline de CI y transcripción de ejemplo                    | Pendiente |

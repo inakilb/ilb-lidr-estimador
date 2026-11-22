@@ -48,6 +48,7 @@ app/
   services/llm_service.py builds messages, calls the LLM, returns the estimation
   context/__init__.py
   context/examples.py     ESTIMATION_EXAMPLES: list of {meeting_summary, estimation} (>= 2, fictitious)
+transcripciones/          sample request bodies {"transcription": ...} for curl -d @file (extra, not in the course layout)
 .env                      real values, gitignored
 .env.example              same variables, empty values, committed
 .gitignore
