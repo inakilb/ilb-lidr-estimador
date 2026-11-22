@@ -106,22 +106,29 @@ Los tres primeros vienen del material del curso, corregidos. Todos siguen las mi
 - **Caché del prompt.** El system prompt (~6.700 tokens) es idéntico en cada llamada y se guarda en caché durante 5 minutos. Las llamadas siguientes lo leen al 10 % del precio.
 - **Proveedores y modelos.** Cada proveedor está registrado en `PROVIDERS` y comparte el mismo prompt y el mismo formato de resultado:
 
-  | Proveedor            | Cómo activarlo en `.env`                     | Modelo por defecto                                                                                |
-  | -------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-  | Anthropic            | (por defecto) `ANTHROPIC_API_KEY=...`        | `claude-haiku-4-5`, el que indica el curso                                                        |
-  | Anthropic, Haiku 5.5 | `LLM_MODEL=claude-haiku-5-5`                 | `claude-haiku-5-5`: más barato y piensa antes de responder (el servicio lo usa con `effort: low`) |
-  | OpenAI               | `LLM_PROVIDER=openai` y `OPENAI_API_KEY=...` | `gpt-4o-mini`, con caché automática del prompt                                                    |
+  | Proveedor            | Cómo activarlo en `.env`                     | Modelo por defecto                                                                                      |
+  | -------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+  | Anthropic            | (por defecto) `ANTHROPIC_API_KEY=...`        | `claude-haiku-4-5`, el que indica el curso                                                              |
+  | Anthropic, Haiku 5.5 | `LLM_MODEL=claude-haiku-5-5`                 | `claude-haiku-5-5`: más barato y piensa antes de responder (el servicio lo usa con `effort: low`)       |
+  | OpenAI               | `LLM_PROVIDER=openai` y `OPENAI_API_KEY=...` | `gpt-4o-mini`, con caché automática del prompt                                                          |
+  | OpenAI, GPT-6 Luna   | `LLM_MODEL=gpt-6-luna`                       | `gpt-6-luna`: más reciente y razona antes de responder (el servicio lo usa con `reasoning_effort: low`) |
+
+  OpenAI marca `gpt-4o-mini` como obsoleto (_deprecated_). Se mantiene por defecto porque es el modelo del curso, y `gpt-6-luna` es la alternativa actual.
+
+- **Deja `LLM_MODEL` vacío** en `.env` para que el modelo siga al proveedor (`claude-haiku-4-5` o `gpt-4o-mini`). Si `LLM_MODEL` es un modelo del otro proveedor (por ejemplo `claude-haiku-4-5` con `LLM_PROVIDER=openai`), la configuración falla al arrancar con un error que lo indica.
+- **Sin crédito.** Si la cuenta del proveedor no tiene crédito, el servicio lo indica con un error claro ("no credits") y no lo reintenta como si fuera un límite de peticiones.
 
 - **Añadir un proveedor** (por ejemplo Gemini):
-  1. En `app/config.py`, añade el proveedor a `LLMProvider`, junto con su API key y su modelo por defecto.
+  1. En `app/config.py`, añade el proveedor a `LLMProvider`, junto con su API key, su modelo por defecto y el patrón de nombres de sus modelos (`MODEL_PATTERNS`).
   2. En `llm_service.py`, escribe la función `_generate_with_<proveedor>` y regístrala en `PROVIDERS`.
-  3. Añade su precio a la tabla de costes.
+  3. Añade su precio a la tabla de costes y, si lo necesita, sus opciones de petición a `MODEL_REQUEST_OPTIONS`.
 
-| Modelo             | Coste aproximado por estimación                                                                      |
-| ------------------ | ---------------------------------------------------------------------------------------------------- |
-| `claude-haiku-4-5` | ~0,013 $ la primera llamada y ~0,005 $ con caché                                                     |
-| `claude-haiku-5-5` | ~0,002 $                                                                                             |
-| `gpt-4o-mini`      | ~0,0011 $ la primera llamada y ~0,0007 $ con caché |
+| Modelo             | Coste aproximado por estimación                                                                               |
+| ------------------ | ------------------------------------------------------------------------------------------------------------- |
+| `claude-haiku-4-5` | ~0,013 $ la primera llamada y ~0,005 $ con caché                                                              |
+| `claude-haiku-5-5` | ~0,002 $                                                                                                      |
+| `gpt-4o-mini`      | ~0,0011 $ la primera llamada y ~0,0007 $ con caché                                                            |
+| `gpt-6-luna`       | ~0,0011 $ la primera llamada y ~0,0007 $ con caché (más barato por token, pero genera tokens de razonamiento) |
 
 ## Uso
 

@@ -5,6 +5,7 @@ unset, so a fresh copy of `.env.example` falls back to the defaults. Run the app
 from the repository root so `.env` is found.
 """
 
+import re
 from functools import lru_cache
 from typing import Literal
 
@@ -18,6 +19,13 @@ LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 DEFAULT_MODELS: dict[str, str] = {
     "openai": "gpt-4o-mini",
     "anthropic": "claude-haiku-4-5",
+}
+
+# Model-name patterns that clearly belong to each provider. An explicit LLM_MODEL that
+# matches another provider's pattern is rejected; names matching none are accepted.
+MODEL_PATTERNS: dict[str, str] = {
+    "openai": r"^(gpt-|o\d)",
+    "anthropic": r"^claude-",
 }
 
 
@@ -44,6 +52,13 @@ class Settings(BaseSettings):
         key_var = f"{self.llm_provider.upper()}_API_KEY"
         if getattr(self, key_var.lower()) is None:
             raise ValueError(f"{key_var} is required when LLM_PROVIDER={self.llm_provider}")
+        if self.llm_model:
+            for provider, pattern in MODEL_PATTERNS.items():
+                if provider != self.llm_provider and re.match(pattern, self.llm_model):
+                    raise ValueError(
+                        f"LLM_MODEL={self.llm_model} is a {provider} model but LLM_PROVIDER="
+                        f"{self.llm_provider}; leave LLM_MODEL empty to use the provider's default model"
+                    )
         if not self.llm_model:
             self.llm_model = DEFAULT_MODELS[self.llm_provider]
         return self

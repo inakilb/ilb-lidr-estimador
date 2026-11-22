@@ -11,7 +11,8 @@ The system prompt carries the estimator role, the estimation rules and every ent
 Providers are registered in `PROVIDERS` (name -> generate function):
 
 - anthropic: `claude-haiku-4-5` by default, `claude-haiku-5-5` supported.
-- openai: `gpt-4o-mini` by default (Chat Completions, automatic prompt caching).
+- openai: `gpt-4o-mini` by default (Chat Completions, automatic prompt caching),
+  `gpt-6-luna` supported.
 
 To add a provider (e.g. Gemini): add it to `LLMProvider` and add its API key and default
 model in `app/config.py`, write a `_generate_with_<name>(transcription, settings)` function
@@ -38,12 +39,15 @@ REQUEST_TIMEOUT_SECONDS = 60.0
 # Fixed key so OpenAI routes requests sharing the system prompt to the same cache.
 OPENAI_PROMPT_CACHE_KEY = "estimador-cag-system"
 
-# Extra request options per model. Haiku 4.5 rejects `effort` and keeps thinking off;
-# Haiku 5.5 thinks by default (adaptive), so it gets low effort to keep cost and
-# latency down. Models not listed are sent without extras.
+# Extra request options per model, applied by every provider (model IDs are unique).
+# Haiku 4.5 rejects `effort` and keeps thinking off; Haiku 5.5 and GPT-6 Luna reason by
+# default, so they get low effort to keep cost and latency down. gpt-4o-mini does not
+# reason. Models not listed are sent without extras.
 MODEL_REQUEST_OPTIONS: dict[str, dict[str, Any]] = {
     "claude-haiku-4-5": {},
     "claude-haiku-5-5": {"output_config": {"effort": "low"}},
+    "gpt-4o-mini": {},
+    "gpt-6-luna": {"reasoning_effort": "low"},
 }
 
 # List prices in USD per million tokens, used for the cost estimate only.
@@ -53,6 +57,7 @@ MODEL_PRICES_USD_PER_MTOK: dict[str, dict[str, float]] = {
     "claude-haiku-4-5": {"input": 1.00, "output": 5.00, "cache_write": 1.25, "cache_read": 0.10},
     "claude-haiku-5-5": {"input": 0.10, "output": 0.50, "cache_write": 0.125, "cache_read": 0.01},
     "gpt-4o-mini": {"input": 0.15, "output": 0.60, "cache_write": 0.15, "cache_read": 0.075},
+    "gpt-6-luna": {"input": 0.10, "output": 0.50, "cache_write": 0.125, "cache_read": 0.01},
 }
 
 INSTRUCTIONS = """\
@@ -228,6 +233,22 @@ def _anthropic_client(api_key: str) -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=api_key, timeout=REQUEST_TIMEOUT_SECONDS)
 
 
+def _is_quota_exhausted(e: Exception) -> bool:
+    """True when the provider account has no credits (not a temporary rate limit).
+
+    OpenAI: 429 with error code `insufficient_quota`. Anthropic: 400 whose message
+    mentions the credit balance. Reads attributes defensively for either SDK.
+    """
+    code = getattr(e, "code", None)
+    body = getattr(e, "body", None)
+    if isinstance(body, dict):
+        error = body.get("error", body)
+        if isinstance(error, dict):
+            code = code or error.get("code") or error.get("type")
+    message = str(getattr(e, "message", "") or "").lower()
+    return code == "insufficient_quota" or "credit balance" in message
+
+
 def _upstream_error(e: Exception, sdk: ModuleType) -> LLMUpstreamError:
     """Map an SDK exception to LLMUpstreamError, most specific first. Never includes the key.
 
@@ -240,6 +261,12 @@ def _upstream_error(e: Exception, sdk: ModuleType) -> LLMUpstreamError:
     if isinstance(e, sdk.APIStatusError):
         request_id = getattr(e, "request_id", None)
         detail = f"LLM API error {e.status_code}" + (f" (request {request_id})" if request_id else "")
+        if _is_quota_exhausted(e):
+            return LLMUpstreamError(
+                f"{detail}: the LLM provider account has no credits (quota exhausted).",
+                retryable=False,
+                status_code=e.status_code,
+            )
         if isinstance(e, sdk.RateLimitError):
             return LLMUpstreamError(f"{detail}: rate limited.", retryable=True, status_code=e.status_code)
         if e.status_code >= 500:
@@ -328,6 +355,7 @@ def _generate_with_openai(transcription: str, settings: Settings) -> EstimationR
                 {"role": "system", "content": build_system_prompt()},
                 {"role": "user", "content": user_message},
             ],
+            **MODEL_REQUEST_OPTIONS.get(model, {}),
         )
     except openai.APIError as e:
         error = _upstream_error(e, openai)

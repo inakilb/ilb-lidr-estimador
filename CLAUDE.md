@@ -57,7 +57,7 @@ README.md
 
 Request flow: router → `llm_service` → messages `[system]` (expert software estimator role + every `ESTIMATION_EXAMPLES` entry) and `[user]` (the transcription) → LLM → `[assistant]` estimation → JSON response.
 
-- Providers: **Anthropic (`claude-haiku-4-5`) is the default and the first one implemented**, because the user only has an Anthropic API key for now. `claude-haiku-5-5` is supported as an opt-in alternative (`LLM_MODEL=claude-haiku-5-5`): it is cheaper, has thinking on by default, and the service sends it `effort: low`. OpenAI (`gpt-4o-mini`, `LLM_PROVIDER=openai`) is implemented and verified live. Providers are registered in `PROVIDERS` in `app/services/llm_service.py`; Gemini may be added later the same way.
+- Providers: **Anthropic (`claude-haiku-4-5`) is the default and the first one implemented**, because the user only has an Anthropic API key for now. `claude-haiku-5-5` is supported as an opt-in alternative (`LLM_MODEL=claude-haiku-5-5`): it is cheaper, has thinking on by default, and the service sends it `effort: low`. OpenAI (`gpt-4o-mini`, `LLM_PROVIDER=openai`) is implemented and verified live. `gpt-4o-mini` is deprecated by OpenAI but stays the default as the course model; `gpt-6-luna` is supported as an opt-in alternative (`LLM_MODEL=gpt-6-luna`, sent with `reasoning_effort: low`). Per-model request options live in `MODEL_REQUEST_OPTIONS`, and an `LLM_MODEL` from the other provider is rejected at startup. Providers are registered in `PROVIDERS` in `app/services/llm_service.py`; Gemini may be added later the same way.
 - Secrets: API keys only come from `.env` via `config.py`, never in code.
 
 ## Exercise steps (one OpenSpec change each, committed per the Workflow cycle)
