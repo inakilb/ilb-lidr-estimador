@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Defines the CAG estimation service: how the prompt is built (estimator role, rules, Spanish output, the static examples), how the transcription is passed as data, prompt caching, the provider registry (Anthropic with Haiku 4.5 by default and Haiku 5.5 supported, OpenAI with gpt-4o-mini), the result with normalized usage and cost, and error handling.
+Defines the CAG estimation service: how the prompt is built (estimator role, rules, Spanish output, the static examples), how the transcription is passed as data, prompt caching, the provider registry (Anthropic with Haiku 4.5 by default and Haiku 5.5 supported, OpenAI with gpt-4o-mini by default and GPT-6 Luna supported, with per-model request options), the result with normalized usage and cost, and error handling.
 
 ## Requirements
 
@@ -90,7 +90,7 @@ The service SHALL use the provider and model from the settings (`LLM_PROVIDER`, 
 
 ### Requirement: OpenAI request
 
-The OpenAI request SHALL use the Chat Completions API with two messages, a `system` message containing the system prompt and a `user` message containing the wrapped transcription, plus `max_completion_tokens=16000` and the fixed `prompt_cache_key`. It SHALL NOT send sampling parameters. The response SHALL be handled as follows:
+The OpenAI request SHALL use the Chat Completions API with two messages, a `system` message containing the system prompt and a `user` message containing the wrapped transcription, plus `max_completion_tokens=16000`, the fixed `prompt_cache_key` and the model's entry from the per-model request options. It SHALL NOT send sampling parameters. The response SHALL be handled as follows:
 
 - `finish_reason` `stop` with non-empty content is a success;
 - `length` means a truncated answer;
@@ -115,7 +115,14 @@ OpenAI usage SHALL be reported in the same fields as Anthropic's: `input_tokens`
 
 ### Requirement: Supported models
 
-The service SHALL support `claude-haiku-4-5` (the default) and `claude-haiku-5-5`. Requests to `claude-haiku-5-5` SHALL include `output_config: {"effort": "low"}` and SHALL NOT set `thinking`, so that the model's default adaptive thinking applies at low effort. Requests to `claude-haiku-4-5` SHALL NOT include `effort` or `thinking`, because that model does not accept `effort` and thinking stays off. Any other configured model ID SHALL be sent without extra options.
+The service SHALL support these models, with per-model request options taken from one table keyed by model ID and applied by both providers:
+
+- `claude-haiku-4-5`: the Anthropic default. Requests SHALL include neither `effort` nor `thinking`, because the model does not accept `effort` and thinking stays off.
+- `claude-haiku-5-5`: requests SHALL include `output_config: {"effort": "low"}` and SHALL NOT set `thinking`, so that the model's default adaptive thinking applies at low effort.
+- `gpt-4o-mini`: the OpenAI default. Requests SHALL include no reasoning options.
+- `gpt-6-luna`: requests SHALL include `reasoning_effort: "low"`.
+
+Any other configured model ID SHALL be sent without extra options.
 
 #### Scenario: Haiku 4.5 request
 
@@ -126,6 +133,16 @@ The service SHALL support `claude-haiku-4-5` (the default) and `claude-haiku-5-5
 
 - **WHEN** `LLM_MODEL=claude-haiku-5-5`
 - **THEN** the request contains `output_config.effort` `low` and no `thinking` field, and the result's `model` is `claude-haiku-5-5`
+
+#### Scenario: GPT-4o mini request
+
+- **WHEN** `LLM_PROVIDER=openai` and `LLM_MODEL` is unset
+- **THEN** the request goes to `gpt-4o-mini` with no `reasoning_effort`
+
+#### Scenario: GPT-6 Luna request
+
+- **WHEN** `LLM_PROVIDER=openai` and `LLM_MODEL=gpt-6-luna`
+- **THEN** the request contains `reasoning_effort` `low`, and the result's `model` is `gpt-6-luna`
 
 #### Scenario: Thinking blocks ignored
 
@@ -140,7 +157,7 @@ A successful call SHALL return an `EstimationResult` with:
 - `model`: the configured model ID;
 - `provider`;
 - token usage: input, output, cache read and cache write tokens;
-- `estimated_cost_usd`: the cost computed from the usage at the model's list prices (known for `claude-haiku-4-5`, `claude-haiku-5-5` and `gpt-4o-mini`), or `None` when the model has no known price.
+- `estimated_cost_usd`: the cost computed from the usage at the model's list prices (known for `claude-haiku-4-5`, `claude-haiku-5-5`, `gpt-4o-mini` and `gpt-6-luna`), or `None` when the model has no known price.
 
 #### Scenario: Successful estimation
 
@@ -152,7 +169,9 @@ A successful call SHALL return an `EstimationResult` with:
 The service SHALL turn failures into its own exceptions, all subclasses of `LLMServiceError`:
 
 - `UnsupportedProviderError` when the provider is not implemented;
-- `LLMUpstreamError` when the API or the connection fails, with a `retryable` flag that is true for rate limits, overload, server errors, timeouts and connection errors;
+- `LLMUpstreamError` when the API or the connection fails, with a `retryable` flag:
+  - true for rate limits, overload, server errors, timeouts and connection errors;
+  - false for an exhausted quota or billing problem (for example OpenAI's 429 with error code `insufficient_quota`), which is reported with a message that says the account has no credits;
 - `IncompleteEstimationError` when the response is truncated (`max_tokens`), refused (`refusal`) or contains no text.
 
 Error messages and logs SHALL NOT contain the API key.
@@ -166,6 +185,11 @@ Error messages and logs SHALL NOT contain the API key.
 
 - **WHEN** the API returns 429 after the SDK's own retries
 - **THEN** `LLMUpstreamError` is raised with `retryable` true
+
+#### Scenario: Quota exhausted
+
+- **WHEN** the API returns 429 with error code `insufficient_quota`
+- **THEN** `LLMUpstreamError` is raised with `retryable` false and a message saying the account has no credits
 
 #### Scenario: Invalid key
 
