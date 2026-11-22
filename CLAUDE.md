@@ -57,7 +57,7 @@ README.md
 
 Request flow: router → `llm_service` → messages `[system]` (expert software estimator role + every `ESTIMATION_EXAMPLES` entry) and `[user]` (the transcription) → LLM → `[assistant]` estimation → JSON response.
 
-- Providers: **Anthropic (`claude-haiku-4-5`) is the default and the first one implemented**, because the user only has an Anthropic API key for now. `claude-haiku-5-5` is supported as an opt-in alternative (`LLM_MODEL=claude-haiku-5-5`): it is cheaper, has thinking on by default, and the service sends it `effort: low`. OpenAI (`gpt-4o-mini`), and possibly Gemini, will be added later, selected through `LLM_PROVIDER`. Keep the `openai` SDK installed for that.
+- Providers: **Anthropic (`claude-haiku-4-5`) is the default and the first one implemented**, because the user only has an Anthropic API key for now. `claude-haiku-5-5` is supported as an opt-in alternative (`LLM_MODEL=claude-haiku-5-5`): it is cheaper, has thinking on by default, and the service sends it `effort: low`. OpenAI (`gpt-4o-mini`, `LLM_PROVIDER=openai`) is implemented and verified offline, but not yet live: there is no OpenAI key yet. Providers are registered in `PROVIDERS` in `app/services/llm_service.py`; Gemini may be added later the same way.
 - Secrets: API keys only come from `.env` via `config.py`, never in code.
 
 ## Exercise steps (one OpenSpec change each, committed per the Workflow cycle)
@@ -65,14 +65,14 @@ Request flow: router → `llm_service` → messages `[system]` (expert software 
 1. **Init project**: uv project, dependencies (`fastapi`, `uvicorn[standard]`, `pydantic-settings`, `openai` and/or `anthropic`, `python-dotenv`), full folder skeleton above.
 2. **Config**: `config.py` with Pydantic `BaseSettings` reading `.env`; `.env.example` with the variables and empty values; `.env` with real values and listed in `.gitignore`. Variables:
 
-   | Variable            | Description                        | Default                                   |
-   | ------------------- | ---------------------------------- | ----------------------------------------- |
-   | `OPENAI_API_KEY`    | OpenAI API key                     | none (required if OpenAI is used)         |
-   | `ANTHROPIC_API_KEY` | Anthropic API key                  | none (required if Anthropic is used)      |
-   | `LLM_PROVIDER`      | Provider: `openai` or `anthropic`  | `anthropic` (course default: `openai`)    |
-   | `LLM_MODEL`         | Model to use                       | provider's economy model, `claude-haiku-4-5` (course default: `gpt-4o-mini`) |
-   | `APP_ENV`           | Runtime environment                | `development`                             |
-   | `LOG_LEVEL`         | Logging level                      | `DEBUG`                                   |
+   | Variable            | Description                       | Default                                                                      |
+   | ------------------- | --------------------------------- | ---------------------------------------------------------------------------- |
+   | `OPENAI_API_KEY`    | OpenAI API key                    | none (required if OpenAI is used)                                            |
+   | `ANTHROPIC_API_KEY` | Anthropic API key                 | none (required if Anthropic is used)                                         |
+   | `LLM_PROVIDER`      | Provider: `openai` or `anthropic` | `anthropic` (course default: `openai`)                                       |
+   | `LLM_MODEL`         | Model to use                      | provider's economy model, `claude-haiku-4-5` (course default: `gpt-4o-mini`) |
+   | `APP_ENV`           | Runtime environment               | `development`                                                                |
+   | `LOG_LEVEL`         | Logging level                     | `DEBUG`                                                                      |
 
 3. **Static context**: `ESTIMATION_EXAMPLES` in `context/examples.py`, at least 2 entries, each with `meeting_summary` (what the client asked for) and `estimation` (Markdown: task breakdown with hours/costs, total, team, duration).
 4. **LLM service**: `services/llm_service.py` builds the system prompt + injected examples, sends the transcription as the user message, and returns the model output.

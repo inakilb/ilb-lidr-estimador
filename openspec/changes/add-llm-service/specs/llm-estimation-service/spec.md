@@ -53,7 +53,7 @@ The transcription SHALL be wrapped in clearly delimited tags in the user message
 
 ### Requirement: Prompt caching
 
-The system prompt SHALL be sent as a single content block marked with `cache_control: {"type": "ephemeral"}`. Its length SHALL be at least 4,096 tokens, the minimum cacheable prefix for `claude-haiku-4-5`.
+On Anthropic, the system prompt SHALL be sent as a single content block marked with `cache_control: {"type": "ephemeral"}`. Its length SHALL be at least 4,096 tokens, the minimum cacheable prefix for `claude-haiku-4-5`. On OpenAI, caching is automatic for prompts of 1,024 tokens or more. The service SHALL send a fixed `prompt_cache_key` so that requests sharing the system prompt are routed to the same cache.
 
 #### Scenario: Prompt long enough to cache
 
@@ -67,17 +67,47 @@ The system prompt SHALL be sent as a single content block marked with `cache_con
 
 ### Requirement: Provider and model selection
 
-The service SHALL use the provider and model from the settings (`LLM_PROVIDER`, `LLM_MODEL`). The `anthropic` provider SHALL be implemented. Selecting a provider that is not implemented yet (`openai`) SHALL raise `UnsupportedProviderError` without making any network call.
+The service SHALL use the provider and model from the settings (`LLM_PROVIDER`, `LLM_MODEL`). Providers SHALL be registered in a single mapping from provider name to generate function. The `anthropic` and `openai` providers SHALL be implemented. A provider name with no registered implementation SHALL raise `UnsupportedProviderError` without making any network call.
 
 #### Scenario: Anthropic default
 
 - **WHEN** the settings use the defaults
 - **THEN** the request goes to Anthropic with model `claude-haiku-4-5`
 
-#### Scenario: OpenAI not implemented yet
+#### Scenario: OpenAI selected
 
-- **WHEN** `LLM_PROVIDER=openai` and an estimation is requested
+- **WHEN** `LLM_PROVIDER=openai` and `OPENAI_API_KEY` are set, and `LLM_MODEL` is unset
+- **THEN** the request goes to OpenAI with model `gpt-4o-mini`, and the result's `provider` is `openai`
+
+#### Scenario: Unregistered provider
+
+- **WHEN** the settings name a provider that has no registered implementation
 - **THEN** `UnsupportedProviderError` is raised and no request is sent
+
+### Requirement: OpenAI request
+
+The OpenAI request SHALL use the Chat Completions API with two messages, a `system` message containing the system prompt and a `user` message containing the wrapped transcription, plus `max_completion_tokens=16000` and the fixed `prompt_cache_key`. It SHALL NOT send sampling parameters. The response SHALL be handled as follows:
+
+- `finish_reason` `stop` with non-empty content is a success;
+- `length` means a truncated answer;
+- `content_filter`, a non-empty `refusal` or empty content means no usable estimation.
+
+OpenAI usage SHALL be reported in the same fields as Anthropic's: `input_tokens` counts only uncached prompt tokens, `cache_read_input_tokens` is the cached prompt tokens, and `cache_creation_input_tokens` is the cache-write tokens, or 0 when they are not reported.
+
+#### Scenario: OpenAI request shape
+
+- **WHEN** an estimation is generated with `LLM_PROVIDER=openai`
+- **THEN** the request has exactly a `system` and a `user` message, `max_completion_tokens` 16000, the fixed `prompt_cache_key`, and no `temperature`, `top_p` or `max_tokens`
+
+#### Scenario: OpenAI truncated or refused
+
+- **WHEN** the OpenAI response has `finish_reason` `length`, `finish_reason` `content_filter`, or a `refusal`
+- **THEN** `IncompleteEstimationError` is raised
+
+#### Scenario: OpenAI usage normalized
+
+- **WHEN** the OpenAI response reports 6,800 prompt tokens of which 6,656 are cached
+- **THEN** the result has `input_tokens` 144 and `cache_read_input_tokens` 6,656
 
 ### Requirement: Supported models
 
@@ -106,7 +136,7 @@ A successful call SHALL return an `EstimationResult` with:
 - `model`: the configured model ID;
 - `provider`;
 - token usage: input, output, cache read and cache write tokens;
-- `estimated_cost_usd`: the cost computed from the usage at the model's list prices (known for `claude-haiku-4-5` and `claude-haiku-5-5`), or `None` when the model has no known price.
+- `estimated_cost_usd`: the cost computed from the usage at the model's list prices (known for `claude-haiku-4-5`, `claude-haiku-5-5` and `gpt-4o-mini`), or `None` when the model has no known price.
 
 #### Scenario: Successful estimation
 

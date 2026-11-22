@@ -91,6 +91,38 @@ Los tres primeros vienen del material del curso, corregidos. Todos siguen las mi
 - Duración en semanas = horas totales / (FTE × 30 h productivas por semana), redondeado hacia arriba.
 - Secciones: desglose de tareas, totales, supuestos, fuera de alcance, riesgos, equipo recomendado y duración.
 
+## Servicio LLM
+
+`app/services/llm_service.py` genera la estimación en una única llamada al LLM:
+
+```text
+[system]    → rol de estimador experto + reglas + los 7 ejemplos (en etiquetas XML)
+[user]      → la transcripción, dentro de <transcription>…</transcription>
+[assistant] → la estimación, en español y en Markdown
+```
+
+- **Respuesta en español.** Los ejemplos están en inglés, pero el prompt exige escribir en español, con encabezados fijos: Desglose de tareas, Totales, Supuestos, Fuera de alcance, Riesgos, Equipo recomendado y Duración estimada.
+- **La transcripción se trata como datos.** Si contiene instrucciones ("ignora lo anterior…"), el modelo no las sigue.
+- **Caché del prompt.** El system prompt (~6.700 tokens) es idéntico en cada llamada y se guarda en caché durante 5 minutos. Las llamadas siguientes lo leen al 10 % del precio.
+- **Proveedores y modelos.** Cada proveedor está registrado en `PROVIDERS` y comparte el mismo prompt y el mismo formato de resultado:
+
+  | Proveedor            | Cómo activarlo en `.env`                     | Modelo por defecto                                                                                |
+  | -------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+  | Anthropic            | (por defecto) `ANTHROPIC_API_KEY=...`        | `claude-haiku-4-5`, el que indica el curso                                                        |
+  | Anthropic, Haiku 5.5 | `LLM_MODEL=claude-haiku-5-5`                 | `claude-haiku-5-5`: más barato y piensa antes de responder (el servicio lo usa con `effort: low`) |
+  | OpenAI               | `LLM_PROVIDER=openai` y `OPENAI_API_KEY=...` | `gpt-4o-mini`, con caché automática del prompt                                                    |
+
+- **Añadir un proveedor** (por ejemplo Gemini):
+  1. En `app/config.py`, añade el proveedor a `LLMProvider`, junto con su API key y su modelo por defecto.
+  2. En `llm_service.py`, escribe la función `_generate_with_<proveedor>` y regístrala en `PROVIDERS`.
+  3. Añade su precio a la tabla de costes.
+
+| Modelo             | Coste aproximado por estimación                                                                      |
+| ------------------ | ---------------------------------------------------------------------------------------------------- |
+| `claude-haiku-4-5` | ~0,013 $ la primera llamada y ~0,005 $ con caché                                                     |
+| `claude-haiku-5-5` | ~0,002 $                                                                                             |
+| `gpt-4o-mini`      | ~0,0015 $ la primera llamada y ~0,001 $ con caché (pendiente de verificar con una API key de OpenAI) |
+
 ## Uso
 
 ```bash
@@ -120,7 +152,7 @@ El código se desarrolla con [OpenSpec](https://github.com/Fission-AI/OpenSpec):
 | 1    | Inicializar el proyecto (uv, dependencias, estructura)       | Hecho     |
 | 2    | Configuración con variables de entorno (`config.py`, `.env`) | Hecho     |
 | 3    | Contexto estático: ejemplos de estimaciones                  | Hecho     |
-| 4    | Servicio de llamada al LLM                                   | Pendiente |
+| 4    | Servicio de llamada al LLM                                   | Hecho     |
 | 5    | Endpoint `POST /api/v1/estimate`                             | Pendiente |
 | 6    | Aplicación FastAPI (`GET /health`, Swagger)                  | Pendiente |
 | 7    | Verificación                                                 | Pendiente |

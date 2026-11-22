@@ -37,7 +37,8 @@ The router (step 5) is a FastAPI endpoint and will call this service. Users writ
 
 **Non-Goals:**
 
-- The OpenAI and Gemini implementations: later changes, with the dispatch point ready for them.
+- The Gemini implementation: a later change, which plugs into the provider registry.
+- A live OpenAI check: no OpenAI API key is available yet. The OpenAI code is verified offline against the installed SDK's types, and the live check is a follow-up for when the key exists.
 - Streaming responses: the course expects a single JSON response.
 - Extended thinking: it is not needed for this structured task on Haiku and would add cost and latency. Revisit in the live session.
 - An HTTP schema and status-code mapping: step 5.
@@ -48,9 +49,17 @@ The router (step 5) is a FastAPI endpoint and will call this service. Users writ
 - **Module layout:**
   - `build_system_prompt()` is pure and cached with `lru_cache`.
   - `build_user_message(transcription)` is pure.
-  - `generate_estimation(transcription, settings=None)` does the provider dispatch.
-  - `_generate_with_anthropic(...)` makes the call.
-  - The pure builders can be tested without the network, and the dispatch is the single place where future providers plug in.
+  - `generate_estimation(transcription, settings=None)` looks up the provider in `PROVIDERS` and calls it.
+  - `_generate_with_anthropic(...)` and `_generate_with_openai(...)` each take `(transcription, settings)` and return an `EstimationResult`.
+  - Shared pieces stay provider-neutral: prompt builders, `EstimationResult`, the errors, the cost table and a `_build_result()` helper that logs usage and computes the cost.
+  - The pure builders can be tested without the network.
+- **Provider registry instead of `if`/`elif`:** `PROVIDERS: dict[str, Callable[[str, Settings], EstimationResult]]`. Adding Gemini takes four steps:
+  1. Add `"gemini"` to `LLMProvider` and a `GEMINI_API_KEY` field in `config.py`.
+  2. Add the model default.
+  3. Write `_generate_with_gemini`.
+  4. Register it, and add its price.
+
+  Everything stays in `llm_service.py`, because the course fixes the folder layout. A `providers/` subpackage would be cleaner past three or four providers, but it would add files the course structure does not list.
 - **The system prompt as a single text block with `cache_control: {"type": "ephemeral"}`.**
   - Everything in it is static, so one breakpoint at its end caches all of it. At about 6.5k tokens it clears Haiku 4.5's 4,096-token minimum.
   - Default TTL of 5 minutes. A 1-hour TTL doubles the write price and only pays off with bursty traffic and long gaps, which a course demo does not have.
@@ -73,6 +82,17 @@ The router (step 5) is a FastAPI endpoint and will call this service. Users writ
     - `claude-haiku-4-5` gets nothing, because it rejects `effort` and thinking stays off.
   - Unknown models get no extras.
   - Alternative: an `LLM_EFFORT` environment variable. Rejected for now, because it would add a seventh variable outside the course's list and change the step 2 spec. The table is easy to promote to config later.
+- **OpenAI through Chat Completions (`client.chat.completions.create`) with `gpt-4o-mini`:**
+  - Messages: `[{"role": "system", ...}, {"role": "user", ...}]`, built by the same prompt functions, so both providers see an identical prompt.
+  - `max_completion_tokens=16000`. `max_tokens` is deprecated in the SDK, and gpt-4o-mini outputs at most 16,384 tokens.
+  - Chat Completions rather than the newer Responses API, because it is the most widely documented and is what the course material assumes. Switching later would only affect this function.
+  - **Caching:** OpenAI caches prompts of 1,024+ tokens automatically, with no markup. A fixed `prompt_cache_key="estimador-cag-system"` helps route requests that share the system prompt to the same cache.
+  - **Response handling:**
+    - `finish_reason` `length`: `IncompleteEstimationError` (truncated).
+    - `content_filter`, or a non-empty `message.refusal`: `IncompleteEstimationError` (declined).
+    - Empty content: `IncompleteEstimationError`.
+  - **Usage normalization:** OpenAI's `prompt_tokens` includes cached tokens, so `input_tokens = prompt_tokens - cached_tokens - cache_write_tokens`. `cache_read_input_tokens = cached_tokens`, and `cache_creation_input_tokens = cache_write_tokens` or 0. Both providers then report usage, and compute cost, the same way.
+  - Client: one `openai.OpenAI` per key (`lru_cache`), with a 60 s timeout and the SDK's default retries.
 - **No sampling parameters.** The current API version rejects `temperature`, `top_p` and `top_k`, and consistency comes from the examples, not from sampling.
 - **`max_tokens = 16000`.** The estimations are about 1.5–2.5k tokens. A tight cap risks truncated output, and an unused cap costs nothing. 16k keeps the non-streaming request well inside the SDK's HTTP timeout.
 - **One Anthropic client per API key, cached with `lru_cache`.** It reuses the connection pool across requests. The key comes from `settings.anthropic_api_key.get_secret_value()`, read only at this boundary. The client gets a 60 s timeout and the SDK default of 2 retries for 408/409/429/5xx and connection errors.
@@ -88,10 +108,12 @@ The router (step 5) is a FastAPI endpoint and will call this service. Users writ
   - `RateLimitError`, `InternalServerError` / status ≥ 500 (including 529 overloaded), `APITimeoutError` and `APIConnectionError` become `LLMUpstreamError(retryable=True)`.
   - `AuthenticationError`, `PermissionDeniedError`, `NotFoundError`, `BadRequestError` and other `APIStatusError`s become `LLMUpstreamError(retryable=False)`.
   - Messages include the status code and the request ID, never the key. The original exception is chained with `raise … from e`.
+  - The `openai` SDK has the same exception hierarchy (`APITimeoutError` ⊂ `APIConnectionError`, plus `RateLimitError`, `APIStatusError`, and so on). The mapper takes the SDK module as a parameter, so one function serves both providers and every future SDK with this shape.
 - **`EstimationResult` as a frozen dataclass:** `estimation`, `model`, `provider`, `input_tokens`, `output_tokens`, `cache_read_input_tokens`, `cache_creation_input_tokens`, `estimated_cost_usd`. A plain dataclass keeps the service independent of the HTTP schema, which is Pydantic and belongs to step 5.
 - **The cost estimate from a small price table** (USD per million tokens):
   - `claude-haiku-4-5`: input 1.00, output 5.00, cache write 1.25, cache read 0.10.
   - `claude-haiku-5-5`: input 0.10, output 0.50, cache write 0.125, cache read 0.01. These are the rates for prompts up to 100K tokens, which always applies here.
+  - `gpt-4o-mini`: input 0.15, output 0.60, cache write 0.15 (OpenAI does not charge extra for writes), cache read 0.075.
   - Output tokens include thinking tokens, as the API bills them. Unknown models give `None` instead of a wrong number. The prices are list prices and are documented as an estimate.
 - **`model` in the result is the configured ID** (`claude-haiku-4-5`), as in the course's sample response. The dated snapshot returned by the API is logged at DEBUG level.
 - **Logging with `logging.getLogger(__name__)`:**
