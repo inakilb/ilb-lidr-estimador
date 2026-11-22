@@ -38,7 +38,6 @@ The router (step 5) is a FastAPI endpoint and will call this service. Users writ
 **Non-Goals:**
 
 - The Gemini implementation: a later change, which plugs into the provider registry.
-- A live OpenAI check: no OpenAI API key is available yet. The OpenAI code is verified offline against the installed SDK's types, and the live check is a follow-up for when the key exists.
 - Streaming responses: the course expects a single JSON response.
 - Extended thinking: it is not needed for this structured task on Haiku and would add cost and latency. Revisit in the live session.
 - An HTTP schema and status-code mapping: step 5.
@@ -123,6 +122,8 @@ The router (step 5) is a FastAPI endpoint and will call this service. Users writ
   - The log level is wired to `LOG_LEVEL` in step 6.
 
 ## Risks / Trade-offs
+
+- [OpenAI verified live only after the change was archived] → An OpenAI key with credits was not available at first, so the OpenAI path was verified offline against the installed SDK's types. The live check (task 4b.7) passed later the same day: Spanish output, correct usage normalization, and cache reads on the second call.
 
 - [The model drifts into English, because the examples are English] → Explicit Spanish instruction plus fixed Spanish headings. Checked during verification and again in step 7.
 - [The model makes arithmetic slips (totals that don't add up)] → The examples show consistent arithmetic, but LLMs can still slip. Accepted for now: the course says quality is iterated in the live session. A later step could recompute the totals in code.

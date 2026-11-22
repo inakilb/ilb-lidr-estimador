@@ -121,7 +121,7 @@ Los tres primeros vienen del material del curso, corregidos. Todos siguen las mi
 | ------------------ | ---------------------------------------------------------------------------------------------------- |
 | `claude-haiku-4-5` | ~0,013 $ la primera llamada y ~0,005 $ con caché                                                     |
 | `claude-haiku-5-5` | ~0,002 $                                                                                             |
-| `gpt-4o-mini`      | ~0,0015 $ la primera llamada y ~0,001 $ con caché (pendiente de verificar con una API key de OpenAI) |
+| `gpt-4o-mini`      | ~0,0011 $ la primera llamada y ~0,0007 $ con caché |
 
 ## Uso
 

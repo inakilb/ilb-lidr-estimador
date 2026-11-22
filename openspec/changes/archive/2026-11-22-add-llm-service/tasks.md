@@ -33,7 +33,7 @@
 - [x] 4b.4 Implement `_generate_with_openai`: cached `openai.OpenAI` client per key, Chat Completions with system + user messages, `max_completion_tokens=16000`, fixed `prompt_cache_key`, no sampling parameters
 - [x] 4b.5 Handle `finish_reason` (`stop`, `length`, `content_filter`), `refusal` and empty content, and normalize the usage (uncached input, cached reads, cache writes)
 - [x] 4b.6 Offline (fake OpenAI client): request shape, usage normalization, cost, stop and refusal handling, error mapping with OpenAI exceptions, unregistered provider. Re-run the Anthropic offline checks
-- [ ] 4b.7 Live OpenAI check: one estimation with `LLM_PROVIDER=openai`. Deferred until an OpenAI API key is available; left open and reported
+- [x] 4b.7 Live OpenAI check: one estimation with `LLM_PROVIDER=openai`. Done on 2026-11-22, after the change was archived, once an OpenAI key with credits was available. Two calls to `gpt-4o-mini`: Spanish estimation with the seven Spanish headings; the second call read 5,632 tokens from the automatic cache; $0.0019 in total
 
 ## 5. Verification
 
