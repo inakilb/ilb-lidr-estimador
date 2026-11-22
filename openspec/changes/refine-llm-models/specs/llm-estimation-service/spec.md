@@ -1,0 +1,111 @@
+# Spec
+
+## MODIFIED Requirements
+
+### Requirement: OpenAI request
+
+The OpenAI request SHALL use the Chat Completions API with two messages, a `system` message containing the system prompt and a `user` message containing the wrapped transcription, plus `max_completion_tokens=16000`, the fixed `prompt_cache_key` and the model's entry from the per-model request options. It SHALL NOT send sampling parameters. The response SHALL be handled as follows:
+
+- `finish_reason` `stop` with non-empty content is a success;
+- `length` means a truncated answer;
+- `content_filter`, a non-empty `refusal` or empty content means no usable estimation.
+
+OpenAI usage SHALL be reported in the same fields as Anthropic's: `input_tokens` counts only uncached prompt tokens, `cache_read_input_tokens` is the cached prompt tokens, and `cache_creation_input_tokens` is the cache-write tokens, or 0 when they are not reported.
+
+#### Scenario: OpenAI request shape
+
+- **WHEN** an estimation is generated with `LLM_PROVIDER=openai`
+- **THEN** the request has exactly a `system` and a `user` message, `max_completion_tokens` 16000, the fixed `prompt_cache_key`, and no `temperature`, `top_p` or `max_tokens`
+
+#### Scenario: OpenAI truncated or refused
+
+- **WHEN** the OpenAI response has `finish_reason` `length`, `finish_reason` `content_filter`, or a `refusal`
+- **THEN** `IncompleteEstimationError` is raised
+
+#### Scenario: OpenAI usage normalized
+
+- **WHEN** the OpenAI response reports 6,800 prompt tokens of which 6,656 are cached
+- **THEN** the result has `input_tokens` 144 and `cache_read_input_tokens` 6,656
+
+### Requirement: Supported models
+
+The service SHALL support these models, with per-model request options taken from one table keyed by model ID and applied by both providers:
+
+- `claude-haiku-4-5`: the Anthropic default. Requests SHALL include neither `effort` nor `thinking`, because the model does not accept `effort` and thinking stays off.
+- `claude-haiku-5-5`: requests SHALL include `output_config: {"effort": "low"}` and SHALL NOT set `thinking`, so that the model's default adaptive thinking applies at low effort.
+- `gpt-4o-mini`: the OpenAI default. Requests SHALL include no reasoning options.
+- `gpt-6-luna`: requests SHALL include `reasoning_effort: "low"`.
+
+Any other configured model ID SHALL be sent without extra options.
+
+#### Scenario: Haiku 4.5 request
+
+- **WHEN** the model is `claude-haiku-4-5`
+- **THEN** the request contains neither `output_config` nor `thinking`
+
+#### Scenario: Haiku 5.5 request
+
+- **WHEN** `LLM_MODEL=claude-haiku-5-5`
+- **THEN** the request contains `output_config.effort` `low` and no `thinking` field, and the result's `model` is `claude-haiku-5-5`
+
+#### Scenario: GPT-4o mini request
+
+- **WHEN** `LLM_PROVIDER=openai` and `LLM_MODEL` is unset
+- **THEN** the request goes to `gpt-4o-mini` with no `reasoning_effort`
+
+#### Scenario: GPT-6 Luna request
+
+- **WHEN** `LLM_PROVIDER=openai` and `LLM_MODEL=gpt-6-luna`
+- **THEN** the request contains `reasoning_effort` `low`, and the result's `model` is `gpt-6-luna`
+
+#### Scenario: Thinking blocks ignored
+
+- **WHEN** a response contains `thinking` blocks before the `text` blocks
+- **THEN** `estimation` contains only the text of the `text` blocks
+
+### Requirement: Estimation result
+
+A successful call SHALL return an `EstimationResult` with:
+
+- `estimation`: the text of the model's response;
+- `model`: the configured model ID;
+- `provider`;
+- token usage: input, output, cache read and cache write tokens;
+- `estimated_cost_usd`: the cost computed from the usage at the model's list prices (known for `claude-haiku-4-5`, `claude-haiku-5-5`, `gpt-4o-mini` and `gpt-6-luna`), or `None` when the model has no known price.
+
+#### Scenario: Successful estimation
+
+- **WHEN** the model finishes normally (`stop_reason` is `end_turn`)
+- **THEN** the result has a non-empty `estimation`, `model` `claude-haiku-4-5`, `provider` `anthropic`, the token counts, and a positive `estimated_cost_usd`
+
+### Requirement: Error handling
+
+The service SHALL turn failures into its own exceptions, all subclasses of `LLMServiceError`:
+
+- `UnsupportedProviderError` when the provider is not implemented;
+- `LLMUpstreamError` when the API or the connection fails, with a `retryable` flag:
+  - true for rate limits, overload, server errors, timeouts and connection errors;
+  - false for an exhausted quota or billing problem (for example OpenAI's 429 with error code `insufficient_quota`), which is reported with a message that says the account has no credits;
+- `IncompleteEstimationError` when the response is truncated (`max_tokens`), refused (`refusal`) or contains no text.
+
+Error messages and logs SHALL NOT contain the API key.
+
+#### Scenario: Truncated response
+
+- **WHEN** the response has `stop_reason` `max_tokens`
+- **THEN** `IncompleteEstimationError` is raised
+
+#### Scenario: Rate limited
+
+- **WHEN** the API returns 429 after the SDK's own retries
+- **THEN** `LLMUpstreamError` is raised with `retryable` true
+
+#### Scenario: Quota exhausted
+
+- **WHEN** the API returns 429 with error code `insufficient_quota`
+- **THEN** `LLMUpstreamError` is raised with `retryable` false and a message saying the account has no credits
+
+#### Scenario: Invalid key
+
+- **WHEN** the API returns 401
+- **THEN** `LLMUpstreamError` is raised with `retryable` false, and its message does not contain the key
