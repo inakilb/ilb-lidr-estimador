@@ -1,0 +1,17 @@
+[project]
+name = "ilb-lidr-estimador"
+version = "0.1.0"
+description = "Estimador de software con arquitectura CAG: FastAPI + LLM (curso LIDR, sesión 2)"
+readme = "README.md"
+authors = [
+    { name = "Iñaki López", email = "inakilb@gmail.com" }
+]
+requires-python = ">=3.11"
+dependencies = [
+    "anthropic>=2.12.0",
+    "fastapi>=0.165.0",
+    "openai>=3.57.0",
+    "pydantic-settings>=2.16.3",
+    "python-dotenv>=1.2.4",
+    "uvicorn[standard]>=0.54.0",
+]
