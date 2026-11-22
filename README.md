@@ -13,7 +13,7 @@ transcripción → inyectar contexto estático (ejemplos) → LLM → estimació
 - Python 3.11, gestionado con [uv](https://docs.astral.sh/uv/)
 - FastAPI + Uvicorn
 - pydantic-settings + python-dotenv para la configuración
-- LLM: OpenAI (`gpt-4o-mini`) y/o Anthropic (`claude-haiku-4-5`), seleccionable con `LLM_PROVIDER`
+- LLM: Anthropic (`claude-haiku-4-5`) por defecto. OpenAI (`gpt-4o-mini`) se puede elegir con `LLM_PROVIDER`, y más adelante se añadirán otros proveedores
 
 ## Estructura
 
@@ -43,13 +43,32 @@ pyproject.toml / uv.lock # Dependencias (requirements.txt se genera desde el loc
 uv sync                            # o bien: pip install -r requirements.txt
 
 # 2. Configurar variables de entorno
-cp .env.example .env               # y rellenar las API keys
+cp .env.example .env               # y rellenar ANTHROPIC_API_KEY
 
 # 3. Arrancar el servidor
 uv run uvicorn app.main:app --reload
 ```
 
 La documentación interactiva (Swagger) queda disponible en <http://localhost:8000/docs>.
+
+Ejecuta los comandos desde la raíz del repositorio para que se lea el `.env`.
+
+## Configuración
+
+La configuración se carga desde las variables de entorno y desde el archivo `.env` (`app/config.py`). Si una variable está definida en los dos sitios, gana la del entorno. Una variable vacía se trata como no definida y toma su valor por defecto.
+
+| Variable            | Descripción                                | Valor por defecto                                                   |
+| ------------------- | ------------------------------------------ | ------------------------------------------------------------------- |
+| `ANTHROPIC_API_KEY` | API key de Anthropic                       | Sin valor por defecto (obligatoria si se usa Anthropic)             |
+| `OPENAI_API_KEY`    | API key de OpenAI                          | Sin valor por defecto (obligatoria si se usa OpenAI)                |
+| `LLM_PROVIDER`      | Proveedor a utilizar: `anthropic` o `openai` | `anthropic`                                                       |
+| `LLM_MODEL`         | Modelo a utilizar                          | El modelo económico del proveedor: `claude-haiku-4-5` o `gpt-4o-mini` |
+| `APP_ENV`           | Entorno de ejecución                       | `development`                                                       |
+| `LOG_LEVEL`         | Nivel de logging (`DEBUG` … `CRITICAL`)    | `DEBUG`                                                             |
+
+> El enunciado del curso propone OpenAI (`gpt-4o-mini`) como proveedor por defecto. Por ahora este proyecto usa Anthropic, porque es el único proveedor con API key disponible. Con `LLM_PROVIDER=openai` se recupera el comportamiento del enunciado.
+
+`.env` contiene las API keys reales y está en `.gitignore`. `.env.example` documenta las variables sin valores y sí se versiona.
 
 ## Uso
 
@@ -64,8 +83,8 @@ Respuesta:
 ```json
 {
   "estimation": "## Estimación: ...\n\n### Desglose de tareas:\n...",
-  "model": "gpt-4o-mini",
-  "provider": "openai"
+  "model": "claude-haiku-4-5",
+  "provider": "anthropic"
 }
 ```
 
@@ -78,7 +97,7 @@ El código se desarrolla con [OpenSpec](https://github.com/Fission-AI/OpenSpec):
 | Paso | Entrega                                                      | Estado    |
 | ---- | ------------------------------------------------------------ | --------- |
 | 1    | Inicializar el proyecto (uv, dependencias, estructura)       | Hecho     |
-| 2    | Configuración con variables de entorno (`config.py`, `.env`) | Pendiente |
+| 2    | Configuración con variables de entorno (`config.py`, `.env`) | Hecho     |
 | 3    | Contexto estático: ejemplos de estimaciones                  | Pendiente |
 | 4    | Servicio de llamada al LLM                                   | Pendiente |
 | 5    | Endpoint `POST /api/v1/estimate`                             | Pendiente |
