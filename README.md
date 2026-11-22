@@ -138,15 +138,35 @@ curl -X POST http://localhost:8000/api/v1/estimate \
   -d '{"transcription": "En la reunión con el equipo de marketing, el cliente explicó que necesita una landing page con formulario de contacto, integración con su CRM actual (HubSpot) y una sección de blog con editor WYSIWYG. El plazo ideal sería tenerlo listo en 4 semanas. El diseño ya existe en Figma."}'
 ```
 
-Respuesta:
+Respuesta (200):
 
 ```json
 {
-  "estimation": "## Estimación: ...\n\n### Desglose de tareas:\n...",
+  "estimation": "## Estimación: Landing Page con Blog y Integración HubSpot\n\n### Desglose de tareas\n...",
   "model": "claude-haiku-4-5",
-  "provider": "anthropic"
+  "provider": "anthropic",
+  "usage": {
+    "input_tokens": 111,
+    "output_tokens": 878,
+    "cache_read_input_tokens": 0,
+    "cache_creation_input_tokens": 6736
+  },
+  "estimated_cost_usd": 0.012921,
+  "generated_at": "2026-11-22T21:26:50.505759Z"
 }
 ```
+
+`estimation`, `model` y `provider` son los campos que pide el curso. `usage`, `estimated_cost_usd` y `generated_at` son extras: los tokens consumidos (incluidos los leídos o escritos en la caché), el coste estimado en dólares y la fecha de generación (UTC).
+
+La `transcription` es obligatoria, no puede estar vacía y admite como máximo 50.000 caracteres. Los errores devuelven `{"detail": "..."}`:
+
+| Código | Cuándo                                                                                                                        | Qué hacer                              |
+| ------ | ----------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| 422    | La petición no es válida (falta `transcription`, está vacía o es demasiado larga)                                             | Corregir la petición                   |
+| 500    | La configuración del servicio no es válida (por ejemplo, falta la API key)                                                    | Revisar `.env`                         |
+| 501    | El proveedor configurado no está implementado                                                                                 | Cambiar `LLM_PROVIDER`                 |
+| 502    | El proveedor falla y reintentar no sirve (API key inválida, sin crédito, modelo inexistente), o la estimación sale incompleta | Revisar la cuenta o la configuración   |
+| 503    | El proveedor no está disponible en este momento (límite de peticiones, sobrecarga, timeout)                                   | Reintentar tras `Retry-After` segundos |
 
 ## Desarrollo
 
@@ -160,7 +180,7 @@ El código se desarrolla con [OpenSpec](https://github.com/Fission-AI/OpenSpec):
 | 2    | Configuración con variables de entorno (`config.py`, `.env`) | Hecho     |
 | 3    | Contexto estático: ejemplos de estimaciones                  | Hecho     |
 | 4    | Servicio de llamada al LLM                                   | Hecho     |
-| 5    | Endpoint `POST /api/v1/estimate`                             | Pendiente |
+| 5    | Endpoint `POST /api/v1/estimate`                             | Hecho     |
 | 6    | Aplicación FastAPI (`GET /health`, Swagger)                  | Pendiente |
 | 7    | Verificación                                                 | Pendiente |
 | 8    | Pipeline de CI y transcripción de ejemplo                    | Pendiente |

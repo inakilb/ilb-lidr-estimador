@@ -40,8 +40,9 @@ It also raises `ValueError` for empty input. `get_settings()` (step 2) is cached
   - `estimation`, `model` and `provider` stay at the top level, exactly as in the course example.
   - Token counts are grouped under `usage` (`TokenUsage` model), plus `estimated_cost_usd` and `generated_at` (`datetime`, timezone-aware UTC).
   - The response models are defined in the router module, because they are part of the HTTP contract. The service keeps its own dataclass, so the HTTP layer and the service stay independent.
-  - The router builds the response from the dataclass explicitly, without `from_attributes` tricks.
-- **Error mapping through `HTTPException`, inside the endpoint:**
+  - `EstimationResponse.from_result(result)` builds the response from the dataclass explicitly, without `from_attributes` tricks, and stamps `generated_at`.
+- **A thin route: receive, delegate, return.** The route body is a single `generate_estimation(...)` call. A service error is translated by `_to_http_exception()`, and the result by `EstimationResponse.from_result()`. All business logic (prompt, LLM call, caching, cost, error classification) stays in `app/services/llm_service.py`. The router only translates between HTTP and the service, which is the job the course gives `routers/`.
+- **Error mapping in one helper, `_to_http_exception(error) -> HTTPException`:**
 
   | Exception                           | Status                                      | Why                                                                                              |
   | ----------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------ |
@@ -49,18 +50,18 @@ It also raises `ValueError` for empty input. `get_settings()` (step 2) is cached
   | `LLMUpstreamError(retryable=True)`  | 503 Service Unavailable + `Retry-After: 30` | Temporary; the client can retry.                                                                 |
   | `LLMUpstreamError(retryable=False)` | 502 Bad Gateway                             | The upstream provider failed, and retrying will not help (bad key, no credits, model not found). |
   | `IncompleteEstimationError`         | 502 Bad Gateway                             | The upstream returned something unusable.                                                        |
-  | `ValueError`                        | 422                                         | Defensive only, because the schema already rejects empty input.                                  |
 
   ***
   - `detail` carries the service error's message. Those messages were designed in step 4 to be safe: status code and request ID, never the key.
-  - A plain `try/except` around one call is clearer than app-level exception handlers. Handlers could move to `main.py` later if more routes appear.
+  - The route catches only the base class `LLMServiceError`, and the helper picks the status. A single `try/except` keeps the route readable without app-level exception handlers. Those could replace the helper in `main.py` if more routes appear.
+  - No `ValueError` branch: the request schema already rejects empty input before the route runs.
 
 - **A settings dependency that turns configuration errors into 500:**
   - `def settings_dependency() -> Settings` calls `get_settings()`. It catches `pydantic.ValidationError` and raises `HTTPException(500, "Service misconfigured: <field>: <message>")`, built from each error's location and message only.
   - The configuration errors are written in step 2: a missing key, a model belonging to the other provider, an invalid provider. They name variables, never values, so they are safe to return.
   - A missing key is a server problem, not the client's, which is why it is a 500.
   - Tests override this dependency.
-- **Logging:** an INFO line per request with the transcription length, plus a WARNING per mapped error. The service already logs usage and cost.
+- **Logging:** a WARNING per mapped error, in `_to_http_exception`. The service already logs the request size (DEBUG) and the usage and cost (INFO), so the route adds no logging of its own.
 - **Verification without touching `main.py`:**
   - A scratchpad test app does `FastAPI(); app.include_router(router, prefix="/api/v1")`, driven with `TestClient`.
   - The service function is replaced through `monkeypatch`-style assignment on the router module, and the settings through `dependency_overrides`.
