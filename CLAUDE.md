@@ -57,7 +57,7 @@ README.md
 
 Request flow: router → `llm_service` → messages `[system]` (expert software estimator role + every `ESTIMATION_EXAMPLES` entry) and `[user]` (the transcription) → LLM → `[assistant]` estimation → JSON response.
 
-- Providers: **Anthropic (`claude-haiku-4-5`) is the default and the first one implemented**, because the user only has an Anthropic API key for now. OpenAI (`gpt-4o-mini`), and possibly Gemini, will be added later, selected through `LLM_PROVIDER`. Keep the `openai` SDK installed for that.
+- Providers: **Anthropic (`claude-haiku-4-5`) is the default and the first one implemented**, because the user only has an Anthropic API key for now. `claude-haiku-5-5` is supported as an opt-in alternative (`LLM_MODEL=claude-haiku-5-5`): it is cheaper, has thinking on by default, and the service sends it `effort: low`. OpenAI (`gpt-4o-mini`), and possibly Gemini, will be added later, selected through `LLM_PROVIDER`. Keep the `openai` SDK installed for that.
 - Secrets: API keys only come from `.env` via `config.py`, never in code.
 
 ## Exercise steps (one OpenSpec change each, committed per the Workflow cycle)
