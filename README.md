@@ -77,7 +77,7 @@ El código se desarrolla con [OpenSpec](https://github.com/Fission-AI/OpenSpec):
 
 | Paso | Entrega                                                      | Estado    |
 | ---- | ------------------------------------------------------------ | --------- |
-| 1    | Inicializar el proyecto (uv, dependencias, estructura)       | En curso  |
+| 1    | Inicializar el proyecto (uv, dependencias, estructura)       | Hecho     |
 | 2    | Configuración con variables de entorno (`config.py`, `.env`) | Pendiente |
 | 3    | Contexto estático: ejemplos de estimaciones                  | Pendiente |
 | 4    | Servicio de llamada al LLM                                   | Pendiente |
