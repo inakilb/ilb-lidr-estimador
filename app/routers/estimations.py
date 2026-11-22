@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
-from app.config import Settings, get_settings
+from app.config import Settings, describe_config_error, get_settings
 from app.services.llm_service import (
     EstimationResult,
     LLMServiceError,
@@ -118,9 +118,7 @@ def settings_dependency() -> Settings:
     try:
         return get_settings()
     except ValidationError as e:
-        problems = "; ".join(
-            f"{'.'.join(str(part) for part in err['loc']) or 'settings'}: {err['msg']}" for err in e.errors()
-        )
+        problems = describe_config_error(e)
         logger.error("Invalid configuration: %s", problems)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

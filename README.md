@@ -49,9 +49,29 @@ cp .env.example .env               # y rellenar ANTHROPIC_API_KEY
 uv run uvicorn app.main:app --reload
 ```
 
-La documentación interactiva (Swagger) queda disponible en <http://localhost:8000/docs>.
+Ejecuta los comandos desde la raíz del repositorio para que se lea el `.env`. Si cambias el `.env`, reinicia el servidor: `--reload` solo detecta cambios en el código.
 
-Ejecuta los comandos desde la raíz del repositorio para que se lea el `.env`.
+Con el servidor arrancado:
+
+| URL                            | Qué hay                                                                                 |
+| ------------------------------ | --------------------------------------------------------------------------------------- |
+| <http://localhost:8000/docs>   | Documentación interactiva (Swagger UI), desde donde también se puede probar el endpoint |
+| <http://localhost:8000/redoc>  | La misma documentación en formato ReDoc                                                 |
+| <http://localhost:8000/health> | Estado del servicio                                                                     |
+| <http://localhost:8000/>       | Redirige a `/docs`                                                                      |
+
+`GET /health` no llama al LLM: solo indica si el servicio está levantado y si su configuración es válida.
+
+```json
+{
+  "status": "ok",
+  "version": "0.1.0",
+  "environment": "development",
+  "llm": { "provider": "anthropic", "model": "claude-haiku-4-5" }
+}
+```
+
+Siempre responde 200. Si la configuración no es válida (por ejemplo, falta la API key), devuelve `"status": "degraded"`, `"llm": null` y un `detail` con el problema. Por eso un monitor o la pipeline de CI deben comprobar el campo `status`, no solo el código HTTP. Los logs de la aplicación usan el nivel de `LOG_LEVEL`.
 
 ## Configuración
 
@@ -181,6 +201,6 @@ El código se desarrolla con [OpenSpec](https://github.com/Fission-AI/OpenSpec):
 | 3    | Contexto estático: ejemplos de estimaciones                  | Hecho     |
 | 4    | Servicio de llamada al LLM                                   | Hecho     |
 | 5    | Endpoint `POST /api/v1/estimate`                             | Hecho     |
-| 6    | Aplicación FastAPI (`GET /health`, Swagger)                  | Pendiente |
+| 6    | Aplicación FastAPI (`GET /health`, Swagger)                  | Hecho     |
 | 7    | Verificación                                                 | Pendiente |
 | 8    | Pipeline de CI y transcripción de ejemplo                    | Pendiente |

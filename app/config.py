@@ -9,7 +9,7 @@ import re
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import SecretStr, model_validator
+from pydantic import SecretStr, ValidationError, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LLMProvider = Literal["openai", "anthropic"]
@@ -56,12 +56,19 @@ class Settings(BaseSettings):
             for provider, pattern in MODEL_PATTERNS.items():
                 if provider != self.llm_provider and re.match(pattern, self.llm_model):
                     raise ValueError(
-                        f"LLM_MODEL={self.llm_model} is a {provider} model but LLM_PROVIDER="
+                        f"LLM_MODEL={self.llm_model} belongs to the {provider} provider, but LLM_PROVIDER="
                         f"{self.llm_provider}; leave LLM_MODEL empty to use the provider's default model"
                     )
         if not self.llm_model:
             self.llm_model = DEFAULT_MODELS[self.llm_provider]
         return self
+
+
+def describe_config_error(error: ValidationError) -> str:
+    """Describe an invalid configuration safely: field names and messages, never values."""
+    return "; ".join(
+        f"{'.'.join(str(part) for part in err['loc']) or 'settings'}: {err['msg']}" for err in error.errors()
+    )
 
 
 @lru_cache
