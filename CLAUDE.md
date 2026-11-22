@@ -57,7 +57,7 @@ README.md
 
 Request flow: router → `llm_service` → messages `[system]` (expert software estimator role + every `ESTIMATION_EXAMPLES` entry) and `[user]` (the transcription) → LLM → `[assistant]` estimation → JSON response.
 
-- Providers: OpenAI (`gpt-4o-mini`) and/or Anthropic (`claude-haiku-4-5`). If both are implemented, `LLM_PROVIDER` in config selects one. Both SDKs are currently installed. Drop the unused one if only one provider is implemented.
+- Providers: **Anthropic (`claude-haiku-4-5`) is the default and the first one implemented**, because the user only has an Anthropic API key for now. OpenAI (`gpt-4o-mini`), and possibly Gemini, will be added later, selected through `LLM_PROVIDER`. Keep the `openai` SDK installed for that.
 - Secrets: API keys only come from `.env` via `config.py`, never in code.
 
 ## Exercise steps (one OpenSpec change each, committed per the Workflow cycle)
@@ -69,8 +69,8 @@ Request flow: router → `llm_service` → messages `[system]` (expert software 
    | ------------------- | ---------------------------------- | ----------------------------------------- |
    | `OPENAI_API_KEY`    | OpenAI API key                     | none (required if OpenAI is used)         |
    | `ANTHROPIC_API_KEY` | Anthropic API key                  | none (required if Anthropic is used)      |
-   | `LLM_PROVIDER`      | Provider: `openai` or `anthropic`  | `openai`                                  |
-   | `LLM_MODEL`         | Model to use                       | `gpt-4o-mini`                             |
+   | `LLM_PROVIDER`      | Provider: `openai` or `anthropic`  | `anthropic` (course default: `openai`)    |
+   | `LLM_MODEL`         | Model to use                       | provider's economy model, `claude-haiku-4-5` (course default: `gpt-4o-mini`) |
    | `APP_ENV`           | Runtime environment                | `development`                             |
    | `LOG_LEVEL`         | Logging level                      | `DEBUG`                                   |
 

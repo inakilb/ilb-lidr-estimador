@@ -9,7 +9,8 @@ context: |
 
   Stack: Python 3.11, uv (pyproject.toml + uv.lock are the source of truth;
   requirements.txt is exported from the lock), FastAPI, Uvicorn, pydantic-settings,
-  python-dotenv, OpenAI (gpt-4o-mini) and/or Anthropic (claude-haiku-4-5).
+  python-dotenv. LLM: Anthropic (claude-haiku-4-5) is the default and first
+  provider; OpenAI (gpt-4o-mini) and possibly Gemini will be added later.
 
   Constraints:
   - Folder layout and file names are fixed by the course and checked by the
