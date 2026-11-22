@@ -29,11 +29,12 @@ uv sync                                   # install deps from uv.lock into .venv
 uv add <pkg>                              # add a dependency (then re-export requirements.txt, below)
 uv run uvicorn app.main:app --reload      # run the API, http://localhost:8000 (Swagger at /docs)
 uv export --no-hashes --no-emit-project --no-dev --format requirements-txt -o requirements.txt
+uv run pytest                             # offline test suite (no LLM calls, no keys, ignores .env)
 ```
 
 `pyproject.toml` + `uv.lock` are the source of truth. `requirements.txt` is generated from the lock for pip users (`pip install -r requirements.txt`): never edit it by hand. The project has no build backend. `app` is imported from the repo root, so run commands from there.
 
-No tests, linter or CI exist yet (see step 8).
+Tests live in `tests/` (pytest, dev dependency; `conftest.py` isolates every test from `.env` and the environment, `helpers.py` has fake SDK clients). CI is `.github/workflows/ci.yml`: locked sync, `requirements.txt` vs `uv.lock` check, pytest, and a uvicorn smoke test with dummy keys. A manual-only `live` job uses the `ANTHROPIC_API_KEY` repository secret. No linter yet.
 
 ## Target architecture
 
@@ -49,6 +50,8 @@ app/
   context/__init__.py
   context/examples.py     ESTIMATION_EXAMPLES: list of {meeting_summary, estimation} (>= 2, fictitious)
 transcripciones/          sample request bodies {"transcription": ...} for curl -d @file (extra, not in the course layout)
+tests/                    pytest suite, one module per main spec (extra)
+.github/workflows/ci.yml  CI pipeline (extra)
 .env                      real values, gitignored
 .env.example              same variables, empty values, committed
 .gitignore

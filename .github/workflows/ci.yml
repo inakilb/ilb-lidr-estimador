@@ -1,0 +1,150 @@
+# CI: validates the folder structure and that the service works (course step 8).
+#
+# - test: locked install, requirements.txt in sync with uv.lock, offline test suite, and a
+#   smoke test of the real app started with uvicorn (dummy keys, no LLM calls, no cost).
+# - live: optional, manual only (Actions > CI > Run workflow > live). Sends one real
+#   estimation using the ANTHROPIC_API_KEY repository secret (~$0.01 per run).
+
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      live:
+        description: "Run the live estimation check (uses the ANTHROPIC_API_KEY secret, ~$0.01)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests and smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install Python (from .python-version)
+        run: uv python install
+
+      - name: Install dependencies (locked)
+        run: uv sync --locked
+
+      - name: requirements.txt matches uv.lock
+        run: |
+          uv export --no-hashes --no-emit-project --no-dev --format requirements-txt -o requirements.txt
+          git diff --exit-code requirements.txt || {
+            echo "::error::requirements.txt is out of sync with uv.lock. Regenerate it with the uv export command in CLAUDE.md."
+            exit 1
+          }
+
+      - name: Test suite (offline, no API keys)
+        run: uv run pytest -v
+
+      - name: Start the service (dummy keys)
+        env:
+          LLM_PROVIDER: anthropic
+          ANTHROPIC_API_KEY: ci-dummy-key
+          LOG_LEVEL: INFO
+        run: |
+          uv run uvicorn app.main:app --port 8000 > server.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8000/health > /dev/null && exit 0
+            sleep 1
+          done
+          echo "::error::the service did not start within 30 s"
+          exit 1
+
+      - name: Smoke test (/health, /docs, empty transcription)
+        run: |
+          code=$(curl -s -o health.json -w '%{http_code}' http://localhost:8000/health)
+          echo "GET /health -> $code: $(cat health.json)"
+          test "$code" = 200
+          python3 -c "import json; b = json.load(open('health.json')); assert b['status'] == 'ok', b"
+
+          code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/docs)
+          echo "GET /docs -> $code"
+          test "$code" = 200
+
+          code=$(curl -s -o empty.json -w '%{http_code}' -X POST http://localhost:8000/api/v1/estimate \
+            -H "Content-Type: application/json" -d @transcripciones/vacia.json)
+          echo "POST /api/v1/estimate (vacia.json) -> $code"
+          test "$code" = 422
+
+      - name: Server log
+        if: failure()
+        run: cat server.log || true
+
+      - name: Stop the service
+        if: always()
+        run: pkill -f "uvicorn app.main:app" || true
+
+  live:
+    name: Live estimation (manual)
+    needs: test
+    if: github.event_name == 'workflow_dispatch' && inputs.live
+    runs-on: ubuntu-latest
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      LLM_PROVIDER: anthropic
+      LOG_LEVEL: INFO
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the secret is configured
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::error::Add the ANTHROPIC_API_KEY repository secret (Settings > Secrets and variables > Actions)."
+            exit 1
+          fi
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install Python and dependencies
+        run: |
+          uv python install
+          uv sync --locked
+
+      - name: Start the service
+        run: |
+          uv run uvicorn app.main:app --port 8000 > server.log 2>&1 &
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8000/health > /dev/null && exit 0
+            sleep 1
+          done
+          echo "::error::the service did not start within 30 s"
+          exit 1
+
+      - name: Estimate transcripciones/curso-landing.json
+        run: |
+          code=$(curl -s -o estimate.json -w '%{http_code}' --max-time 120 -X POST http://localhost:8000/api/v1/estimate \
+            -H "Content-Type: application/json" -d @transcripciones/curso-landing.json)
+          echo "POST /api/v1/estimate -> $code"
+          python3 - "$code" <<'EOF'
+          import json, sys
+          body = json.load(open("estimate.json"))
+          assert sys.argv[1] == "200", body
+          assert body["estimation"].strip(), "empty estimation"
+          print("model:", body["model"], "| provider:", body["provider"])
+          print("usage:", body["usage"], "| cost USD:", body["estimated_cost_usd"])
+          print(body["estimation"])
+          EOF
+
+      - name: Server log
+        if: failure()
+        run: cat server.log || true
+
+      - name: Stop the service
+        if: always()
+        run: pkill -f "uvicorn app.main:app" || true

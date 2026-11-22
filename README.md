@@ -1,5 +1,7 @@
 # ilb-lidr-estimador
 
+[![CI](https://github.com/inakilb/ilb-lidr-estimador/actions/workflows/ci.yml/badge.svg)](https://github.com/inakilb/ilb-lidr-estimador/actions/workflows/ci.yml)
+
 Estimador de proyectos de software con arquitectura **CAG** (Cache-Augmented Generation). Proyecto 1 del curso LIDR, sesión 2.
 
 Es un servicio FastAPI que recibe la transcripción de una reunión con un cliente y devuelve una estimación de software generada por un LLM. Usa como referencia unos ejemplos de estimaciones previas que se inyectan directamente en el prompt.
@@ -32,6 +34,8 @@ app/
     ├── __init__.py
     └── examples.py      # Ejemplos de estimaciones previas (few-shot)
 transcripciones/         # Peticiones de ejemplo ({"transcription": ...}) para probar el endpoint
+tests/                   # Tests automáticos (pytest), sin llamadas al LLM
+.github/workflows/ci.yml # Pipeline de CI (GitHub Actions)
 openspec/                # Especificaciones y cambios (desarrollo con OpenSpec)
 .env.example             # Variables de entorno necesarias (sin valores)
 pyproject.toml / uv.lock # Dependencias (requirements.txt se genera desde el lock)
@@ -247,19 +251,46 @@ Se ha estimado `tienda-vinos.json` dos veces: con los 7 ejemplos en el prompt, c
 - **Sin ejemplos** se siguen cumpliendo las reglas que están en las instrucciones del prompt: la tarifa de 62,5 €/h, la contingencia del 15 %, el IVA excluido, la fórmula de duración y los encabezados en español. En cambio, cambian la granularidad, las tareas, las horas, el equipo y el formato, y faltan partes como el descubrimiento, las páginas legales y el SEO. Es decir, las reglas vienen de las instrucciones, y la plantilla y las cifras de referencia vienen de los ejemplos.
 - Detalles observados en esta verificación: una respuesta usó el formato inglés para los miles (`9,375 EUR`) y otra dejó sin traducir "Tarifa blended". Los resultados varían entre ejecuciones.
 
+## Tests y CI
+
+```bash
+uv run pytest            # 143 tests, unos 3 segundos
+```
+
+Los tests no llaman a ningún LLM, no necesitan API keys y no leen tu `.env`: cada test se ejecuta en una carpeta temporal y sin variables de configuración. Los clientes de Anthropic y OpenAI se sustituyen por versiones falsas que registran las llamadas.
+
+| Módulo                          | Qué comprueba                                                                                              |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `tests/test_structure.py`       | La estructura de carpetas del curso, que `.env` esté en `.gitignore` y que `.env.example` no tenga valores |
+| `tests/test_config.py`          | Carga desde `.env` y desde el entorno, valores por defecto, validaciones y que las claves no se muestren   |
+| `tests/test_examples.py`        | Forma, cobertura, secciones y aritmética de los 7 ejemplos                                                 |
+| `tests/test_llm_service.py`     | Prompt, peticiones a cada proveedor y modelo, caché, tokens, coste y errores                               |
+| `tests/test_estimations.py`     | Validación de la petición, respuesta y códigos de error HTTP del endpoint                                  |
+| `tests/test_app.py`             | Swagger, router montado, `/health` (ok y degraded), redirección de `/` y logging                           |
+| `tests/test_transcripciones.py` | Que los ficheros de `transcripciones/` sean peticiones válidas                                             |
+
+**Pipeline** (`.github/workflows/ci.yml`, GitHub Actions). Se ejecuta en cada push y pull request:
+
+1. Instala las dependencias con `uv sync --locked` y Python 3.11.
+2. Comprueba que `requirements.txt` coincide con `uv.lock`.
+3. Ejecuta los tests.
+4. Hace una prueba de humo: arranca el servicio con `uvicorn` y claves ficticias, y comprueba que `/health` responde 200 con `status: ok`, que `/docs` responde 200 y que `vacia.json` devuelve 422. Nada de esto llama al LLM.
+
+**Prueba en vivo (opcional y manual).** En GitHub, ve a _Actions → CI → Run workflow_, marca `live` y ejecútalo. Envía `transcripciones/curso-landing.json` al servicio con una clave real, que el job lee del secret `ANTHROPIC_API_KEY` del repositorio (_Settings → Secrets and variables → Actions_). Cuesta unos 0,01 $ por ejecución y nunca se lanza automáticamente. Conviene usar una clave exclusiva para CI, con un límite de gasto bajo en la consola de Anthropic.
+
 ## Desarrollo
 
 El código se desarrolla con [OpenSpec](https://github.com/Fission-AI/OpenSpec): cada paso del ejercicio es un cambio (`/opsx:propose` → `/opsx:apply` → `/opsx:archive`) y se entrega en un commit propio.
 
 ## Estado
 
-| Paso | Entrega                                                      | Estado    |
-| ---- | ------------------------------------------------------------ | --------- |
-| 1    | Inicializar el proyecto (uv, dependencias, estructura)       | Hecho     |
-| 2    | Configuración con variables de entorno (`config.py`, `.env`) | Hecho     |
-| 3    | Contexto estático: ejemplos de estimaciones                  | Hecho     |
-| 4    | Servicio de llamada al LLM                                   | Hecho     |
-| 5    | Endpoint `POST /api/v1/estimate`                             | Hecho     |
-| 6    | Aplicación FastAPI (`GET /health`, Swagger)                  | Hecho     |
-| 7    | Verificación                                                 | Hecho     |
-| 8    | Pipeline de CI y transcripción de ejemplo                    | Pendiente |
+| Paso | Entrega                                                      | Estado |
+| ---- | ------------------------------------------------------------ | ------ |
+| 1    | Inicializar el proyecto (uv, dependencias, estructura)       | Hecho  |
+| 2    | Configuración con variables de entorno (`config.py`, `.env`) | Hecho  |
+| 3    | Contexto estático: ejemplos de estimaciones                  | Hecho  |
+| 4    | Servicio de llamada al LLM                                   | Hecho  |
+| 5    | Endpoint `POST /api/v1/estimate`                             | Hecho  |
+| 6    | Aplicación FastAPI (`GET /health`, Swagger)                  | Hecho  |
+| 7    | Verificación                                                 | Hecho  |
+| 8    | Pipeline de CI y transcripción de ejemplo                    | Hecho  |
